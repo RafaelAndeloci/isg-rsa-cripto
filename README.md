@@ -1,0 +1,1 @@
+Este projeto usa node na versão lts (24.15.0)
