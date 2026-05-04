@@ -1,0 +1,19 @@
+{
+  "name": "isg-rsa-cripto",
+  "version": "1.0.0",
+  "description": "Implementação didática do algoritmo RSA em TypeScript com suporte a criptografia de texto por blocos",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node index.ts",
+    "dev": "ts-node index.ts"
+  },
+  "keywords": ["rsa", "criptografia", "typescript"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
