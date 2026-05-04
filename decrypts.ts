@@ -1,15 +1,14 @@
 import { modPow } from "./encrypt";
 
-/**
- * Descriptografa um número usando RSA.
- * Fórmula: m = c^d mod n
- *
- * @param ciphertext - Valor criptografado
- * @param d - Expoente privado
- * @param n - Módulo RSA
- */
-export function decryptNumber(ciphertext: bigint, d: bigint, n: bigint): bigint {
+function decryptBlock(ciphertext: bigint, d: bigint, n: bigint): bigint {
   return modPow(ciphertext, d, n);
+}
+
+function normalizeCipherText(cipherText: string): string {
+  return cipherText
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
 }
 
 /**
@@ -39,11 +38,13 @@ function bigIntToBytes(value: bigint, expectedLength: number): Uint8Array {
  * @param n - Módulo RSA
  */
 export function decryptText(cipherText: string, d: bigint, n: bigint): string {
-  if (!cipherText.trim()) {
+  const normalizedCipherText = normalizeCipherText(cipherText);
+
+  if (!normalizedCipherText) {
     return "";
   }
 
-  const parts = cipherText.split("|");
+  const parts = normalizedCipherText.split("|");
   const resultBytes: number[] = [];
 
   for (const part of parts) {
@@ -53,17 +54,21 @@ export function decryptText(cipherText: string, d: bigint, n: bigint): string {
       throw new Error(`Formato de bloco inválido: "${part}". Esperado "tamanho:valor".`);
     }
 
-    const lengthStr = part.slice(0, separatorIndex);
-    const encryptedStr = part.slice(separatorIndex + 1);
+    const lengthStr = part.slice(0, separatorIndex).trim();
+    const encryptedStr = part.slice(separatorIndex + 1).trim();
 
     if (!lengthStr || !encryptedStr) {
       throw new Error(`Formato de bloco inválido: "${part}". Esperado "tamanho:valor".`);
     }
 
+    if (!/^\d+$/.test(lengthStr) || !/^\d+$/.test(encryptedStr)) {
+      throw new Error(`Bloco inválido: "${part}". Use apenas o formato "tamanho:valor" com números inteiros.`);
+    }
+
     const originalLength = Number(lengthStr);
     const encryptedValue = BigInt(encryptedStr);
 
-    const decryptedBlock = decryptNumber(encryptedValue, d, n);
+    const decryptedBlock = decryptBlock(encryptedValue, d, n);
     const blockBytes = bigIntToBytes(decryptedBlock, originalLength);
 
     resultBytes.push(...blockBytes);

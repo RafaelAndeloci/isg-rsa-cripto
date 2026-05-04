@@ -1,3 +1,5 @@
+import { validateTextModulus } from "./rsa";
+
 /**
  * Realiza a exponenciação modular de forma eficiente.
  * Calcula base^exponent mod modulus usando o método das quadrações sucessivas.
@@ -21,15 +23,7 @@ export function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint 
   return result;
 }
 
-/**
- * Criptografa um número usando RSA.
- * Fórmula: c = m^e mod n
- *
- * @param message - Mensagem numérica (deve satisfazer 0 <= m < n)
- * @param e - Expoente público
- * @param n - Módulo RSA
- */
-export function encryptNumber(message: bigint, e: bigint, n: bigint): bigint {
+function encryptBlock(message: bigint, e: bigint, n: bigint): bigint {
   if (message < 0n || message >= n) {
     throw new Error(`A mensagem numérica deve estar no intervalo 0 <= m < n. Recebido: ${message}, n: ${n}`);
   }
@@ -82,6 +76,8 @@ function getMaxBlockSize(n: bigint): number {
  * @param n - Módulo RSA
  */
 export function encryptText(text: string, e: bigint, n: bigint): string {
+  validateTextModulus(n);
+
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
   const blockSize = getMaxBlockSize(n);
@@ -98,7 +94,7 @@ export function encryptText(text: string, e: bigint, n: bigint): string {
       );
     }
 
-    const encrypted = encryptNumber(blockNumber, e, n);
+    const encrypted = encryptBlock(blockNumber, e, n);
 
     // Serializa o bloco como "tamanhoOriginal:valorCriptografado"
     encryptedBlocks.push(`${block.length}:${encrypted.toString()}`);
