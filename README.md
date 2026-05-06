@@ -1,5 +1,9 @@
 # RSA CLI Didatico em TypeScript
 
+### Alunos:
+- Rafael Andeloci Rodrigues Gonçalves
+- Thales de Oliveira Silva Chioca Caiares
+
 Aplicacao de terminal (CLI) feita com Ink + React para demonstrar RSA de forma didatica, incluindo:
 
 - geracao de chaves (manual e aleatoria)
@@ -175,8 +179,7 @@ Detalhes de implementacao:
 - encrypt.ts: criptografia por blocos
 - decrypts.ts: descriptografia por blocos
 
-## Aviso de Seguranca
+### Referencias:
 
-Este projeto tem foco educacional.
-
-Nao use em producao para proteger dados sensiveis. Faltam componentes obrigatorios de RSA seguro moderno, como padding criptografico apropriado (exemplo: OAEP) e parametros de seguranca robustos.
+- Pdf apresentado em aula
+- StackOverflow
