@@ -1,9 +1,17 @@
+import { Box, render, Text, useApp, useInput } from "ink";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { parse, resolve } from "node:path";
 import React, { useState } from "react";
-import { Box, Text, render, useApp, useInput } from "ink";
 
 import { decryptText } from "./decrypts";
 import { encryptText } from "./encrypt";
-import { generateKeys, generateRandomKeys, type PrivateKey, type PublicKey, validateTextModulus } from "./rsa";
+import {
+  generateKeys,
+  generateRandomKeys,
+  validateTextModulus,
+  type PrivateKey,
+  type PublicKey
+} from "./rsa";
 
 type CliState = {
   publicKey: PublicKey | null;
@@ -16,6 +24,7 @@ type MenuAction =
   | "manualKeys"
   | "encryptText"
   | "decryptText"
+  | "decryptFile"
   | "exit";
 
 type MenuOption = {
@@ -43,8 +52,10 @@ type FormScreen = {
   type: "form";
   title: string;
   action: Exclude<MenuAction, "exit">;
+  hints: string[];
   fields: FormField[];
   values: Record<string, string>;
+  choices: Record<string, string[]>;
   index: number;
 };
 
@@ -56,8 +67,16 @@ const menuOptions: MenuOption[] = [
   { label: "Informar chaves manualmente", action: "manualKeys" },
   { label: "Criptografar texto", action: "encryptText" },
   { label: "Descriptografar texto", action: "decryptText" },
+  { label: "Descriptografar a partir de arquivo .rsa", action: "decryptFile" },
   { label: "Sair", action: "exit" },
 ];
+
+const OUTPUT_DIRS = {
+  encrypt: resolve(process.cwd(), "outputs", "encrypt"),
+  decrypt: resolve(process.cwd(), "outputs", "decrypt"),
+} as const;
+
+type ExportTarget = keyof typeof OUTPUT_DIRS;
 
 function stringifyKeyPart(value: bigint | undefined): string {
   return value === undefined ? "nao informada" : value.toString();
@@ -71,6 +90,18 @@ function createInitialValues(fields: FormField[]): Record<string, string> {
   }
 
   return values;
+}
+
+function applyChoiceDefaults(values: Record<string, string>, choices: Record<string, string[]>): Record<string, string> {
+  const nextValues = { ...values };
+
+  for (const [fieldName, options] of Object.entries(choices)) {
+    if (options.length > 0 && !nextValues[fieldName]) {
+      nextValues[fieldName] = options[0];
+    }
+  }
+
+  return nextValues;
 }
 
 function parseFieldValue(field: FormField, rawValue: string): string | bigint | null {
@@ -114,6 +145,62 @@ function parseKeyPairInput(rawValue: string, keyName: "e" | "d"): { first: bigin
     first: BigInt(match[1]),
     n: BigInt(match[2]),
   };
+}
+
+function normalizeExportFileName(rawValue: string, target: ExportTarget): string {
+  const trimmedValue = rawValue.trim();
+
+  if (!trimmedValue) {
+    throw new Error("Informe um nome de arquivo valido para exportacao.");
+  }
+
+  const parsedPath = parse(trimmedValue);
+  const baseName = parsedPath.name.trim();
+
+  if (!baseName) {
+    throw new Error("Informe um nome de arquivo valido para exportacao.");
+  }
+
+  const outputDir = OUTPUT_DIRS[target];
+  mkdirSync(outputDir, { recursive: true });
+
+  return resolve(outputDir, `${baseName}.rsa`);
+}
+
+function exportTextToRsaFile(fileName: string, content: string, target: ExportTarget): string {
+  const outputPath = normalizeExportFileName(fileName, target);
+  writeFileSync(outputPath, content, { encoding: "utf8" });
+  return outputPath;
+}
+
+function readCipherTextFromRsaFile(rawFilePath: string): string {
+  const trimmedPath = rawFilePath.trim();
+
+  if (!trimmedPath) {
+    throw new Error("Informe o caminho do arquivo .rsa para descriptografar.");
+  }
+
+  const resolvedPath = resolve(process.cwd(), trimmedPath);
+  const content = readFileSync(resolvedPath, { encoding: "utf8" }).trim();
+
+  if (!content) {
+    throw new Error(`O arquivo ${resolvedPath} esta vazio.`);
+  }
+
+  return content;
+}
+
+function listRsaFiles(target: ExportTarget): string[] {
+  const outputDir = OUTPUT_DIRS[target];
+
+  if (!existsSync(outputDir)) {
+    return [];
+  }
+
+  return readdirSync(outputDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".rsa"))
+    .map((entry) => resolve(outputDir, entry.name))
+    .sort((a, b) => a.localeCompare(b));
 }
 
 function requirePublicKey(state: CliState): PublicKey {
@@ -183,14 +270,18 @@ function MenuView({
 
 function FormView({
   title,
+  hints,
   fields,
   values,
+  choices,
   index,
   message,
 }: {
   title: string;
+  hints: string[];
   fields: FormField[];
   values: Record<string, string>;
+  choices: Record<string, string[]>;
   index: number;
   message: string | null;
 }): JSX.Element {
@@ -199,17 +290,31 @@ function FormView({
       <Text color="green">{title}</Text>
       <Text>Digite o valor do campo atual e pressione Enter.</Text>
       <Text>Pressione Escape para cancelar e voltar ao menu.</Text>
+      {hints.map((hint) => (
+        <Text key={hint} color="blue">
+          {hint}
+        </Text>
+      ))}
       <Text> </Text>
       {fields.map((field, fieldIndex) => {
         const prefix = fieldIndex === index ? ">" : " ";
         const optionalLabel = field.optional ? " (opcional)" : "";
+        const fieldChoices = choices[field.name] ?? [];
+        const hasChoices = fieldChoices.length > 0;
+        const selectedChoice = values[field.name] ?? "";
 
         return (
-          <InputLine
-            key={field.name}
-            label={`${prefix} ${field.label}${optionalLabel}`}
-            value={values[field.name] ?? ""}
-          />
+          <Box key={field.name} flexDirection="column">
+            <InputLine label={`${prefix} ${field.label}${optionalLabel}`} value={values[field.name] ?? ""} />
+            {hasChoices && fieldIndex === index
+              ? fieldChoices.map((choice) => (
+                  <Text key={choice} color={choice === selectedChoice ? "green" : undefined}>
+                    {choice === selectedChoice ? "  > " : "    "}
+                    {choice}
+                  </Text>
+                ))
+              : null}
+          </Box>
         );
       })}
       <Text> </Text>
@@ -225,14 +330,24 @@ function App(): JSX.Element {
   const [message, setMessage] = useState<string | null>("Selecione uma opcao.");
   const [screen, setScreen] = useState<ActiveScreen>({ type: "menu" });
 
-  function openForm(title: string, action: Exclude<MenuAction, "exit">, fields: FormField[]): void {
+  function openForm(
+    title: string,
+    action: Exclude<MenuAction, "exit">,
+    fields: FormField[],
+    hints: string[] = [],
+    choices: Record<string, string[]> = {}
+  ): void {
     setMessage(null);
+    const initialValues = applyChoiceDefaults(createInitialValues(fields), choices);
+
     setScreen({
       type: "form",
       title,
       action,
+      hints,
       fields,
-      values: createInitialValues(fields),
+      values: initialValues,
+      choices,
       index: 0,
     });
   }
@@ -245,10 +360,15 @@ function App(): JSX.Element {
   function handleMenuSelect(action: MenuAction): void {
     switch (action) {
       case "generateKeys":
-        openForm("Gerar chaves", action, [
-          { kind: "bigint", name: "p", label: "p" },
-          { kind: "bigint", name: "q", label: "q" },
-        ]);
+        openForm(
+          "Gerar chaves",
+          action,
+          [
+            { kind: "bigint", name: "p", label: "p" },
+            { kind: "bigint", name: "q", label: "q" },
+          ],
+          ["Para suportar texto UTF-8, o modulo n (p * q) deve ser no minimo 256."]
+        );
         return;
       case "generateRandomKeys":
         openForm("Gerar chaves aleatoriamente", action, [
@@ -266,11 +386,47 @@ function App(): JSX.Element {
         ]);
         return;
       case "encryptText":
-        openForm("Criptografar texto", action, [{ kind: "text", name: "text", label: "Texto" }]);
+        openForm(
+          "Criptografar texto",
+          action,
+          [
+            { kind: "text", name: "text", label: "Texto UTF-8" },
+            { kind: "text", name: "exportFileName", label: "Arquivo de saida (.rsa)", optional: true },
+          ],
+          ["A entrada do texto e convertida em bytes UTF-8 antes da criptografia."]
+        );
         return;
       case "decryptText":
-        openForm("Descriptografar texto", action, [{ kind: "text", name: "cipherText", label: "Texto criptografado" }]);
+        openForm(
+          "Descriptografar texto",
+          action,
+          [
+            { kind: "text", name: "cipherText", label: "Texto criptografado" },
+            { kind: "text", name: "exportFileName", label: "Arquivo de saida (.rsa)", optional: true },
+          ]
+        );
         return;
+      case "decryptFile":
+        {
+          const rsaFiles = listRsaFiles("encrypt");
+
+          if (rsaFiles.length === 0) {
+            returnToMenu(`Erro: Nenhum arquivo .rsa encontrado em ${OUTPUT_DIRS.encrypt}.`);
+            return;
+          }
+
+        openForm(
+          "Descriptografar a partir de arquivo .rsa",
+          action,
+          [
+            { kind: "text", name: "cipherFilePath", label: "Arquivo .rsa (selecione com as setas)" },
+            { kind: "text", name: "exportFileName", label: "Arquivo de saida (.rsa)", optional: true },
+          ],
+          ["Use as setas para escolher o arquivo .rsa de entrada na pasta de encrypt."],
+          { cipherFilePath: rsaFiles }
+        );
+        return;
+        }
       case "exit":
         exit();
         return;
@@ -377,13 +533,44 @@ function App(): JSX.Element {
         case "encryptText": {
           const publicKey = requirePublicKey(cliState);
           const cipherText = encryptText(parsedValues.text as string, publicKey.e, publicKey.n);
+          const exportFileName = parsedValues.exportFileName as string | null;
+
+          if (exportFileName) {
+            const outputPath = exportTextToRsaFile(exportFileName, cipherText, "encrypt");
+            returnToMenu(`Texto criptografado e salvo em ${outputPath}: ${cipherText}`);
+            return;
+          }
+
           returnToMenu(`Texto criptografado: ${cipherText}`);
           return;
         }
         case "decryptText": {
           const privateKey = requirePrivateKey(cliState);
           const plainText = decryptText(parsedValues.cipherText as string, privateKey.d, privateKey.n);
+          const exportFileName = parsedValues.exportFileName as string | null;
+
+          if (exportFileName) {
+            const outputPath = exportTextToRsaFile(exportFileName, plainText, "decrypt");
+            returnToMenu(`Texto descriptografado e salvo em ${outputPath}: ${plainText}`);
+            return;
+          }
+
           returnToMenu(`Texto descriptografado: ${plainText}`);
+          return;
+        }
+        case "decryptFile": {
+          const privateKey = requirePrivateKey(cliState);
+          const cipherText = readCipherTextFromRsaFile(parsedValues.cipherFilePath as string);
+          const plainText = decryptText(cipherText, privateKey.d, privateKey.n);
+          const exportFileName = parsedValues.exportFileName as string | null;
+
+          if (exportFileName) {
+            const outputPath = exportTextToRsaFile(exportFileName, plainText, "decrypt");
+            returnToMenu(`Arquivo descriptografado e salvo em ${outputPath}: ${plainText}`);
+            return;
+          }
+
+          returnToMenu(`Texto descriptografado do arquivo: ${plainText}`);
           return;
         }
       }
@@ -418,8 +605,27 @@ function App(): JSX.Element {
 
     const activeField = screen.fields[screen.index];
     const currentValue = screen.values[activeField.name] ?? "";
+    const activeChoices = screen.choices[activeField.name] ?? [];
+
+    if (activeChoices.length > 0 && (key.upArrow || key.downArrow)) {
+      const currentChoiceIndex = Math.max(0, activeChoices.indexOf(currentValue));
+      const nextChoiceIndex = key.upArrow
+        ? currentChoiceIndex === 0
+          ? activeChoices.length - 1
+          : currentChoiceIndex - 1
+        : currentChoiceIndex === activeChoices.length - 1
+          ? 0
+          : currentChoiceIndex + 1;
+
+      updateActiveField(activeChoices[nextChoiceIndex]);
+      return;
+    }
 
     if (key.backspace || key.delete) {
+      if (activeChoices.length > 0) {
+        return;
+      }
+
       updateActiveField(currentValue.slice(0, -1));
       return;
     }
@@ -438,6 +644,10 @@ function App(): JSX.Element {
     }
 
     if (!key.ctrl && !key.meta && input) {
+      if (activeChoices.length > 0) {
+        return;
+      }
+
       updateActiveField(`${currentValue}${input}`);
     }
   });
@@ -446,7 +656,17 @@ function App(): JSX.Element {
     return <MenuView state={cliState} selectedIndex={selectedIndex} message={message} />;
   }
 
-  return <FormView title={screen.title} fields={screen.fields} values={screen.values} index={screen.index} message={message} />;
+  return (
+    <FormView
+      title={screen.title}
+      hints={screen.hints}
+      fields={screen.fields}
+      values={screen.values}
+      choices={screen.choices}
+      index={screen.index}
+      message={message}
+    />
+  );
 }
 
 render(<App />);

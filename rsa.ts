@@ -15,6 +15,9 @@ export type KeyPair = {
   privateKey: PrivateKey;
 };
 
+export const TARGET_RSA_MODULUS_BITS = 256;
+export const MIN_BALANCED_PRIME_REFERENCE_FOR_256_BIT_MODULUS = 1n << 128n;
+export const MIN_BALANCED_PRIME_BITS_FOR_256_BIT_MODULUS = 129;
 export const MIN_TEXT_RSA_MODULUS = 256n;
 const MIN_RANDOM_PRIME_BITS = 5;
 const MAX_RANDOM_PRIME_BITS = 16;
